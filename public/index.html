@@ -445,14 +445,18 @@
     // ============================================
     function renderConversationList() {
       const list = document.getElementById("conversationList");
-      const empty = document.getElementById("emptyConversations");
       const entries = Object.entries(conversations);
 
       if (entries.length === 0) {
-        empty.style.display = "flex";
+        list.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">&#128172;</div>
+            <h3>Nessuna conversazione</h3>
+            <p>I messaggi WhatsApp appariranno qui</p>
+          </div>
+        `;
         return;
       }
-      empty.style.display = "none";
 
       // Ordina per ultimo messaggio
       entries.sort((a, b) => {
