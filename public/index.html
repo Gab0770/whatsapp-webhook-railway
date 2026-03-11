@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Menoo - WhatsApp Chat</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary: #075E54;
+      --primary-dark: #054C44;
+      --accent: #25D366;
+      --bg: #f0f2f5;
+      --sidebar-bg: #ffffff;
+      --chat-bg: #efeae2;
+      --msg-incoming: #ffffff;
+      --msg-outgoing: #d9fdd3;
+      --text-primary: #111b21;
+      --text-secondary: #667781;
+      --border: #e9edef;
+      --hover: #f5f6f6;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== HEADER ===== */
+    .app-header {
+      background: var(--primary);
+      color: white;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .app-header h1 {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .app-header .subtitle {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ff5252;
+    }
+    .connection-dot.connected { background: var(--accent); }
+
+    /* ===== LAYOUT ===== */
+    .chat-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ===== SIDEBAR ===== */
+    .sidebar {
+      width: 360px;
+      min-width: 360px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-header input {
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: var(--bg);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .conversation-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .conversation-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .conversation-item:hover { background: var(--hover); }
+    .conversation-item.active { background: var(--hover); }
+    .conversation-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 600;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+    .conversation-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .conversation-name {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+    .conversation-preview {
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .conversation-meta {
+      text-align: right;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+    .conversation-time {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .unread-badge {
+      background: var(--accent);
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 12px;
+      margin-top: 4px;
+      display: inline-block;
+    }
+
+    /* ===== CHAT AREA ===== */
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--chat-bg);
+    }
+    .chat-header {
+      background: var(--sidebar-bg);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+    }
+    .chat-header .conversation-avatar { width: 40px; height: 40px; font-size: 16px; }
+    .chat-header-info h2 {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .chat-header-info span {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .message {
+      max-width: 65%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      position: relative;
+      word-wrap: break-word;
+    }
+    .message.incoming {
+      align-self: flex-start;
+      background: var(--msg-incoming);
+      border-top-left-radius: 0;
+    }
+    .message.outgoing {
+      align-self: flex-end;
+      background: var(--msg-outgoing);
+      border-top-right-radius: 0;
+    }
+    .message-text { color: var(--text-primary); }
+    .message-time {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: right;
+      margin-top: 4px;
+    }
+    .message-status {
+      font-size: 10px;
+      margin-left: 4px;
+    }
+
+    /* ===== INPUT AREA ===== */
+    .input-area {
+      background: var(--sidebar-bg);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .input-area input {
+      flex: 1;
+      padding: 10px 14px;
+      border: none;
+      background: var(--bg);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .send-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: none;
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+    .send-btn:hover { background: var(--primary-dark); }
+    .send-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* ===== EMPTY STATE ===== */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-secondary);
+    }
+    .empty-state .icon { font-size: 64px; margin-bottom: 16px; opacity: 0.5; }
+    .empty-state h3 { font-size: 20px; margin-bottom: 8px; color: var(--text-primary); }
+    .empty-state p { font-size: 14px; }
+
+    /* ===== DATE SEPARATOR ===== */
+    .date-separator {
+      text-align: center;
+      margin: 12px 0;
+    }
+    .date-separator span {
+      background: #e1f2fb;
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* ===== NOTIFICATION SOUND ===== */
+    .notification-dot {
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="app-header">
+    <div>
+      <h1>Menoo</h1>
+      <div class="subtitle">WhatsApp Business Chat</div>
+    </div>
+    <div class="connection-status">
+      <div class="connection-dot" id="connectionDot"></div>
+      <span id="connectionText">Disconnesso</span>
+    </div>
+  </div>
+
+  <!-- MAIN LAYOUT -->
+  <div class="chat-container">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <input type="text" id="searchInput" placeholder="Cerca conversazione..." oninput="filterConversations()">
+      </div>
+      <div class="conversation-list" id="conversationList">
+        <div class="empty-state" id="emptyConversations">
+          <div class="icon">&#128172;</div>
+          <h3>Nessuna conversazione</h3>
+          <p>I messaggi WhatsApp appariranno qui</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHAT AREA -->
+    <div class="chat-area" id="chatArea">
+      <div class="empty-state" id="emptyChatState">
+        <div class="icon">&#128241;</div>
+        <h3>Menoo WhatsApp Chat</h3>
+        <p>Seleziona una conversazione o attendi un nuovo messaggio</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ============================================
+    // STATE
+    // ============================================
+    let conversations = {};
+    let activePhone = null;
+    const socket = io();
+
+    // ============================================
+    // SOCKET EVENTS
+    // ============================================
+    socket.on("connect", () => {
+      document.getElementById("connectionDot").classList.add("connected");
+      document.getElementById("connectionText").textContent = "Connesso";
+      console.log("WebSocket connesso");
+      loadConversations();
+    });
+
+    socket.on("disconnect", () => {
+      document.getElementById("connectionDot").classList.remove("connected");
+      document.getElementById("connectionText").textContent = "Disconnesso";
+    });
+
+    // Nuovo messaggio in arrivo dal cliente
+    socket.on("message:received", (data) => {
+      const { phone, name, message } = data;
+      if (!conversations[phone]) {
+        conversations[phone] = { name, messages: [] };
+      }
+      if (name && name !== "Sconosciuto") {
+        conversations[phone].name = name;
+      }
+      conversations[phone].messages.push(message);
+
+      renderConversationList();
+
+      if (activePhone === phone) {
+        appendMessage(message);
+        scrollToBottom();
+        // Segna come letto
+        fetch(`/api/conversations/${phone}`);
+      }
+
+      // Notifica audio
+      playNotification();
+    });
+
+    // Messaggio inviato da noi
+    socket.on("message:sent", (data) => {
+      const { phone, message } = data;
+      if (!conversations[phone]) {
+        conversations[phone] = { name: phone, messages: [] };
+      }
+      conversations[phone].messages.push(message);
+
+      renderConversationList();
+
+      if (activePhone === phone) {
+        appendMessage(message);
+        scrollToBottom();
+      }
+    });
+
+    // Status update
+    socket.on("message:status", (data) => {
+      console.log("Status:", data.messageId, "->", data.status);
+    });
+
+    // ============================================
+    // API CALLS
+    // ============================================
+    async function loadConversations() {
+      try {
+        const res = await fetch("/api/conversations");
+        const list = await res.json();
+        // Carica tutte le conversazioni
+        for (const item of list) {
+          const convRes = await fetch(`/api/conversations/${item.phone}`);
+          const conv = await convRes.json();
+          conversations[item.phone] = conv;
+        }
+        renderConversationList();
+      } catch (e) {
+        console.error("Errore caricamento conversazioni:", e);
+      }
+    }
+
+    async function sendMessage() {
+      if (!activePhone) return;
+      const input = document.getElementById("messageInput");
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = "";
+      input.focus();
+
+      try {
+        await fetch("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: activePhone, text }),
+        });
+      } catch (e) {
+        console.error("Errore invio:", e);
+      }
+    }
+
+    // ============================================
+    // RENDERING
+    // ============================================
+    function renderConversationList() {
+      const list = document.getElementById("conversationList");
+      const empty = document.getElementById("emptyConversations");
+      const entries = Object.entries(conversations);
+
+      if (entries.length === 0) {
+        empty.style.display = "flex";
+        return;
+      }
+      empty.style.display = "none";
+
+      // Ordina per ultimo messaggio
+      entries.sort((a, b) => {
+        const lastA = a[1].messages[a[1].messages.length - 1]?.timestamp || "";
+        const lastB = b[1].messages[b[1].messages.length - 1]?.timestamp || "";
+        return lastB.localeCompare(lastA);
+      });
+
+      const searchTerm = document.getElementById("searchInput").value.toLowerCase();
+
+      list.innerHTML = entries
+        .filter(([phone, conv]) => {
+          if (!searchTerm) return true;
+          return (
+            conv.name.toLowerCase().includes(searchTerm) ||
+            phone.includes(searchTerm)
+          );
+        })
+        .map(([phone, conv]) => {
+          const lastMsg = conv.messages[conv.messages.length - 1];
+          const unread = conv.messages.filter(
+            (m) => m.direction === "incoming" && !m.read
+          ).length;
+          const isActive = activePhone === phone;
+          const initials = getInitials(conv.name);
+          const time = lastMsg ? formatTime(lastMsg.timestamp) : "";
+          const preview = lastMsg
+            ? lastMsg.direction === "outgoing"
+              ? "Tu: " + lastMsg.text
+              : lastMsg.text
+            : "";
+
+          return `
+            <div class="conversation-item ${isActive ? "active" : ""}"
+                 onclick="openConversation('${phone}')">
+              <div class="conversation-avatar">${initials}</div>
+              <div class="conversation-info">
+                <div class="conversation-name">${escapeHtml(conv.name)}</div>
+                <div class="conversation-preview">${escapeHtml(preview)}</div>
+              </div>
+              <div class="conversation-meta">
+                <div class="conversation-time">${time}</div>
+                ${unread > 0 ? `<div class="unread-badge">${unread}</div>` : ""}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function openConversation(phone) {
+      activePhone = phone;
+      const conv = conversations[phone];
+      if (!conv) return;
+
+      // Segna come letti
+      conv.messages.forEach((m) => {
+        if (m.direction === "incoming") m.read = true;
+      });
+      fetch(`/api/conversations/${phone}`);
+
+      const chatArea = document.getElementById("chatArea");
+      const initials = getInitials(conv.name);
+
+      chatArea.innerHTML = `
+        <div class="chat-header">
+          <div class="conversation-avatar" style="margin-right:12px">${initials}</div>
+          <div class="chat-header-info">
+            <h2>${escapeHtml(conv.name)}</h2>
+            <span>+${phone}</span>
+          </div>
+        </div>
+        <div class="messages-area" id="messagesArea"></div>
+        <div class="input-area">
+          <input type="text" id="messageInput" placeholder="Scrivi un messaggio..."
+                 onkeypress="if(event.key==='Enter')sendMessage()">
+          <button class="send-btn" onclick="sendMessage()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"/>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      const messagesArea = document.getElementById("messagesArea");
+      let lastDate = "";
+
+      conv.messages.forEach((msg) => {
+        const msgDate = formatDate(msg.timestamp);
+        if (msgDate !== lastDate) {
+          messagesArea.innerHTML += `
+            <div class="date-separator"><span>${msgDate}</span></div>
+          `;
+          lastDate = msgDate;
+        }
+        appendMessage(msg);
+      });
+
+      scrollToBottom();
+      renderConversationList();
+
+      // Focus sull'input
+      setTimeout(() => document.getElementById("messageInput")?.focus(), 100);
+    }
+
+    function appendMessage(msg) {
+      const messagesArea = document.getElementById("messagesArea");
+      if (!messagesArea) return;
+
+      const div = document.createElement("div");
+      div.className = `message ${msg.direction}`;
+      const statusIcon =
+        msg.direction === "outgoing"
+          ? msg.status === "demo"
+            ? ' <span class="message-status" title="Demo">&#9888;</span>'
+            : ' <span class="message-status">&#10003;</span>'
+          : "";
+
+      div.innerHTML = `
+        <div class="message-text">${escapeHtml(msg.text)}</div>
+        <div class="message-time">${formatTime(msg.timestamp)}${statusIcon}</div>
+      `;
+      messagesArea.appendChild(div);
+    }
+
+    function scrollToBottom() {
+      const area = document.getElementById("messagesArea");
+      if (area) {
+        setTimeout(() => (area.scrollTop = area.scrollHeight), 50);
+      }
+    }
+
+    function filterConversations() {
+      renderConversationList();
+    }
+
+    // ============================================
+    // UTILITIES
+    // ============================================
+    function getInitials(name) {
+      if (!name || name === "Sconosciuto") return "?";
+      return name
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+
+    function formatTime(timestamp) {
+      if (!timestamp) return "";
+      const d = new Date(timestamp);
+      return d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatDate(timestamp) {
+      if (!timestamp) return "";
+      const d = new Date(timestamp);
+      const today = new Date();
+      if (d.toDateString() === today.toDateString()) return "Oggi";
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      if (d.toDateString() === yesterday.toDateString()) return "Ieri";
+      return d.toLocaleDateString("it-IT", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    }
+
+    function escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function playNotification() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 800;
+        gain.gain.value = 0.1;
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      } catch (e) {}
+    }
+  </script>
+</body>
+</html>
